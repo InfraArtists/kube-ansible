@@ -11,10 +11,17 @@
       retries: 3
       delay: 3
 
-    - name: Apply CNI plugin (Calico)
+    - name: Apply CNI plugin (Calico iptables)
       command: kubectl create -f {{ calico_crd_url }}
       retries: 3
       delay: 3
+      when: is_iptables == "true"
+
+    - name: Apply CNI plugin (Calico eBPF)
+      command: kubectl create -f {{ calico_crd_bpf_url }}
+      retries: 3
+      delay: 3
+      when: is_ebpf == "true"
   delegate_to: "{{ groups['k8s_masters'][0] }}"
   when: calico_crd_check.rc != 0
   run_once: true

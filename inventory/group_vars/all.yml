@@ -8,7 +8,13 @@ ssh_port: 2222
 
 # Network Calico see here for more details https://github.com/projectcalico/calico/releases
 calico_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/tigera-operator.yaml"
+
+is_iptables: "false"
 calico_crd_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/custom-resources.yaml"
+
+is_ebpf: "true"
+calico_crd_bpf_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/custom-resources-bpf.yaml"
+
 pod_network_cidr: "192.168.0.0/16"
 
 # DNS
