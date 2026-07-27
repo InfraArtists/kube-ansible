@@ -1,0 +1,29 @@
+---
+- name: Set inventory name variable
+  ansible.builtin.set_fact:
+    config_name: "{{ ((inventory_file | basename) | splitext)[0] }}"
+
+- name: Set user variable
+  ansible.builtin.set_fact:
+    ansible_user: "{{ ansible_user }}"
+  when: "ansible_user is defined"
+
+- name: Set up local SSH file
+  ansible.builtin.template:
+    src: config.j2
+    dest: "~/.ssh/ansibleconfig_{{ config_name }}"
+    mode: '0640'
+  become: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Add include statement to SSH config file
+  ansible.builtin.lineinfile:
+    create: true
+    path: ~/.ssh/config
+    line: "Include ~/.ssh/ansibleconfig_{{ config_name }}"
+    insertbefore: BOF
+    mode: '0640'
+  become: false
+  delegate_to: localhost
+  run_once: true

@@ -1,0 +1,17 @@
+{% for host in groups['all'] %}
+Host {{ host }} {{ hostvars[host]['ansible_host'] }}{% if hostvars[host]['net_external_hostname'] is defined %} {{ hostvars[host]['net_external_hostname'] }}{% endif %}
+
+{% if hostvars[host]['ansible_user'] is defined %}
+   User {{ hostvars[host]['ansible_user'] }}
+{% elif ansible_user is defined %}
+   User {{ ansible_user }}
+{% endif %}
+   Hostname {{ hostvars[host]['ansible_host'] }}
+   ForwardAgent yes
+   ServerAliveInterval 10
+   ServerAliveCountMax 30
+   Port {{ hostvars[host]['ansible_port'] | default(22) }}
+   ControlPath ~/.ssh/connections/%h-%p-%r
+   ControlMaster auto
+   ControlPersist 120m
+{% endfor %}

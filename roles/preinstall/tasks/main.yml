@@ -1,5 +1,7 @@
 ---
 # tasks file for preinstall
+- name: Add ansible host to local SSH
+  include_tasks: local_ssh.yaml
 
 - name: basic setup
   include_tasks: basic.yaml
