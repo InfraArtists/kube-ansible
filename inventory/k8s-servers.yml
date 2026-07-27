@@ -1,0 +1,63 @@
+# sample yaml inventory file for kubernetes cluster
+
+all:
+  hosts:
+    k8s-master1:
+      ansible_host: 57.128.30.91
+      private_ip: 10.4.1.111
+    k8s-master2:
+      ansible_host: 57.128.28.203
+      private_ip: 10.4.1.124
+    k8s-master3:
+      ansible_host: 57.128.26.248
+      private_ip: 10.4.2.81
+    k8s-worker1:
+      ansible_host: 57.128.25.179
+      private_ip: 10.4.2.111
+    k8s-worker2:
+      ansible_host: 152.228.243.195
+      private_ip: 10.4.0.5
+    # k8s-worker3:
+    #   ansible_host: 192.168.178.23
+    #   private_ip: 192.168.178.23
+
+    # lb1:
+    #   ansible_host: 192.168.178.31
+    #   private_ip: 192.168.178.31
+    # lb2:
+    #   ansible_host: 192.168.178.32
+    #   private_ip: 192.168.178.32
+
+  children:
+    k8s:
+      hosts:
+        k8s-master1:
+        k8s-master2:
+        k8s-master3:
+        k8s-worker1:
+        k8s-worker2:
+        # k8s-worker3:
+
+    k8s_masters:
+      hosts:
+        k8s-master1:
+        k8s-master2:
+        k8s-master3:
+
+    k8s_workers:
+      hosts:
+        k8s-worker1:
+        k8s-worker2:
+        # k8s-worker3:
+
+    # lb:
+    #   hosts:
+    #     lb1:
+    #     lb2:
+
+  vars:
+    ansible_user: ubuntu
+    ansible_port: 22
+    ansible_python_interpreter: "/usr/bin/python3"
+    domain: "infraartists.com"
+    apiserver_url: "espenu.infraartists.com"
