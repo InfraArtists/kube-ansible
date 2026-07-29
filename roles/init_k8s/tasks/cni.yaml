@@ -7,18 +7,18 @@
 
 - block:
     - name: Apply CNI plugin (Calico)
-      command: kubectl create -f {{ calico_operator_url }}
+      command: kubectl apply -f {{ calico_operator_url }}
       retries: 3
       delay: 3
 
     - name: Apply CNI plugin (Calico iptables)
-      command: kubectl create -f {{ calico_crd_url }}
+      command: kubectl apply -f {{ calico_crd_url }}
       retries: 3
       delay: 3
       when: is_iptables == "true"
 
     - name: Apply CNI plugin (Calico eBPF)
-      command: kubectl create -f {{ calico_crd_bpf_url }}
+      command: kubectl apply -f {{ calico_crd_bpf_url }}
       retries: 3
       delay: 3
       when: is_ebpf == "true"
