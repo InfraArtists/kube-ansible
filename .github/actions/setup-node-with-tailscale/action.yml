@@ -1,0 +1,39 @@
+name: Setup node
+
+inputs:
+  node-name:
+    description: Node name
+    required: true
+
+  ts-oauth-client-id:
+    description: Tailscale OAuth client ID
+    required: true
+
+  ts-oauth-secret:
+    description: Tailscale OAuth secret
+    required: true
+
+runs:
+  using: composite
+
+  steps:
+    - name: Connect to Tailscale
+      uses: tailscale/github-action@v4
+      with:
+        oauth-client-id: ${{ inputs.ts-oauth-client-id }}
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci
+        hostname: ${{ inputs.node-name }}
+
+    - name: Check Tailscale
+      shell: bash
+      run: tailscale status
+
+    - name: Enable Tailscale SSH
+      shell: bash
+      run: sudo tailscale set --ssh
+
+    - name: Test Tailnet
+      shell: bash
+      run: |
+        tailscale ping "${{ inputs.node-name }}"

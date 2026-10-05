@@ -1,0 +1,372 @@
+name: Provision k8s - The hard way
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  redis-service:
+    name: Redis lifecycle coordinator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Connect Redis to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: redis-server-ts
+
+      - name: Register the Redis coordinator
+        run: docker exec ${{ job.services.redis.id }} redis-cli SET redis-service ready
+
+      - name: Keep Redis online until verification finishes
+        shell: bash
+        run: |
+          while [ "$(docker exec ${{ job.services.redis.id }} redis-cli GET redis-service)" = "ready" ]; do
+            sleep 2
+          done
+
+  check-redis-service:
+    name: Check Redis service
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: check-redis-service
+
+      - name: Install Redis CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes redis-tools
+
+      - name: Wait for Redis
+        shell: bash
+        run: |
+          MAX_RETRIES=60
+          COUNT=0
+          REDIS_HOST="redis-server-ts"
+
+          while true; do
+            REDIS_HOST="$(tailscale status --json | jq -r '.Peer[] | select(.HostName == "redis-server-ts") | .TailscaleIPs[0]' | head -n1)"
+
+            if [ -n "$REDIS_HOST" ]; then
+              echo "Checking Redis at ${REDIS_HOST}:6379..."
+              RESPONSE="$(redis-cli -h "$REDIS_HOST" -p 6379 ping 2>/dev/null || true)"
+
+              if [ "$RESPONSE" = "PONG" ]; then
+                echo "Redis is available."
+                break
+              fi
+            fi
+
+            COUNT=$((COUNT + 1))
+
+            if [ "$COUNT" -ge "$MAX_RETRIES" ]; then
+              echo "Timeout waiting for Redis."
+              exit 1
+            fi
+
+            echo "Redis is not available yet. ($COUNT/$MAX_RETRIES)"
+            sleep 2
+          done
+  
+  server:
+    runs-on: ubuntu-22.04
+    needs: check-redis-service
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: Install the Redis client
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes redis-tools
+    - name: Register resource and wait for verification
+      shell: bash
+      run: |
+        KEY=${{ github.job }}
+        redis_host="redis-server-ts"
+
+        until [ -n "$redis_host" ]; do
+          redis_host="$(tailscale status --json | jq -r '.Peer[] | select(.HostName == "redis-server-ts") | .TailscaleIPs[0]' | head -n1)"
+          [ -n "$redis_host" ] || sleep 2
+        done
+
+        redis-cli -h "$redis_host" SET $KEY "$(tailscale ip -4)"
+
+        while [ -n "$(redis-cli -h "$redis_host" GET $KEY)" ]; do
+          echo "having resource: $KEY - $(date)"
+        done
+  
+  node-0:
+    runs-on: ubuntu-22.04
+    needs: check-redis-service
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: Install the Redis client
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes redis-tools
+    - name: Register resource and wait for verification
+      shell: bash
+      run: |
+        KEY=${{ github.job }}
+        redis_host="redis-server-ts"
+
+        until [ -n "$redis_host" ]; do
+          redis_host="$(tailscale status --json | jq -r '.Peer[] | select(.HostName == "redis-server-ts") | .TailscaleIPs[0]' | head -n1)"
+          [ -n "$redis_host" ] || sleep 2
+        done
+
+        redis-cli -h "$redis_host" SET $KEY "$(tailscale ip -4)"
+
+        while [ -n "$(redis-cli -h "$redis_host" GET $KEY)" ]; do
+          echo "having resource: $KEY - $(date)"
+        done
+  
+  node-1:
+    runs-on: ubuntu-22.04
+    needs: check-redis-service
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: Install the Redis client
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes redis-tools
+    - name: Register resource and wait for verification
+      shell: bash
+      run: |
+        KEY=${{ github.job }}
+        redis_host="redis-server-ts"
+
+        until [ -n "$redis_host" ]; do
+          redis_host="$(tailscale status --json | jq -r '.Peer[] | select(.HostName == "redis-server-ts") | .TailscaleIPs[0]' | head -n1)"
+          [ -n "$redis_host" ] || sleep 2
+        done
+
+        redis-cli -h "$redis_host" SET $KEY "$(tailscale ip -4)"
+
+        while [ -n "$(redis-cli -h "$redis_host" GET $KEY)" ]; do
+          echo "having resource: $KEY - $(date)"
+        done
+
+  check-kubernetes-resources:
+    runs-on: ubuntu-22.04
+    needs: check-redis-service
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: Install the Redis client
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes redis-tools
+    - name: Register resource and wait for verification
+      shell: bash
+      run: |
+        KEYS=("node-0" "node-1" "server")
+        redis_host="redis-server-ts"
+
+        while ! printf '%s\n' "${KEYS[@]}" | while read -r KEY; do
+          [ -n "$(redis-cli -h "$redis_host" GET "$KEY")" ] || exit 1
+        done; do
+          echo "Waiting for all resources... $(date)"
+          sleep 2
+        done
+
+        echo "All resources available."
+
+  jumpbox:
+    runs-on: ubuntu-22.04
+    needs: check-kubernetes-resources
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: KTHW step 2
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 02-jumpbox.sh
+        sudo ./02-jumpbox.sh
+    - name: KTHW step 3
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 03-compute-resources.sh
+        sudo ./03-compute-resources.sh
+    - name: KTHW step 4
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 04-certificate-authority.sh #05-kubernetes-configuration-files
+        sudo ./04-certificate-authority.sh
+    - name: KTHW step 5
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 05-kubernetes-configuration-files.sh
+        sudo ./05-kubernetes-configuration-files.sh
+    - name: KTHW step 6
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 06-data-encryption-keys.sh
+        sudo ./06-data-encryption-keys.sh
+    - name: KTHW step 7
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 07-bootstrapping-etcd.sh
+        sudo ./07-bootstrapping-etcd.sh
+    - name: KTHW step 8
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 08-bootstrapping-kubernetes-controllers.sh
+        sudo ./08-bootstrapping-kubernetes-controllers.sh
+    - name: KTHW step 9
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 09-bootstrapping-kubernetes-workers.sh
+        sudo ./09-bootstrapping-kubernetes-workers.sh
+    - name: KTHW step 10
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 10-configuring-kubectl.sh
+        sudo ./10-configuring-kubectl.sh
+    - name: KTHW step 11
+      shell: bash
+      working-directory: ./scripts
+      run: |
+        sudo chmod +x 11-pod-network-routes.sh
+        sudo ./11-pod-network-routes.sh
+    - name: Check kubelet on node-0
+      shell: bash
+      run: |
+        sudo ssh \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          root@node-0 \
+          "systemctl status kubelet --no-pager -l"
+    - name: Check kubelet on node-1
+      shell: bash
+      run: |
+        sudo ssh \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          root@node-1 \
+          "systemctl status kubelet --no-pager -l"
+    - name: kubectl test
+      run: |
+        sleep 30
+        sudo kubectl version
+        sudo kubectl get nodes -o wide
+    - name: Create cluster secret
+      run: |
+        sudo kubectl create secret generic kubernetes-the-hard-way --from-literal="mykey=mydata"
+    - name: Create NginX deployment
+      run: |
+        sudo kubectl create deployment nginx --image=nginx:latest
+    - name: Check NginX pod and get version
+      run: |
+        sleep 10
+        sudo kubectl get pods -A
+        POD_NAME=$(sudo kubectl get pods -l app=nginx -o jsonpath="{.items[0].metadata.name}")
+        sleep 30
+        sudo kubectl exec -ti $POD_NAME -- nginx -v
+    - name: Port forward NginX
+      run: | 
+        POD_NAME=$(sudo kubectl get pods -l app=nginx -o jsonpath="{.items[0].metadata.name}")
+        sudo kubectl port-forward $POD_NAME 8080:80 &
+    - name: cURL test on NginX
+      run: |
+        for i in {1..5}; do
+          curl --head http://127.0.0.1:8080;
+          sleep 3
+        done
+    - name: get NginX logs to see cURLs
+      run: |
+        POD_NAME=$(sudo kubectl get pods -l app=nginx -o jsonpath="{.items[0].metadata.name}")
+        sudo kubectl logs $POD_NAME
+
+  clean-up:
+    runs-on: ubuntu-22.04
+    needs: jumpbox
+    steps:
+    - uses: actions/checkout@v5
+    - name: Setup node
+      uses: ./.github/actions/setup-node-with-tailscale
+      with:
+        node-name: ${{ github.job }}
+        ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+    - name: Install the Redis client
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes redis-tools
+    - name: Remove lifecycle keys and release all jobs
+      shell: bash
+      run: |
+        redis_host="redis-server-ts"
+
+        while [ -z "$redis_host" ]; do
+          redis_host="$(tailscale status --json | jq -r '.Peer[] | select(.HostName == "redis-server-ts") | .TailscaleIPs[0]' | head -n1)"
+          [ -n "$redis_host" ] || sleep 2
+        done
+
+        echo "Releasing k8s cluster..."
+
+        redis-cli -h "$redis_host" DEL \
+          node-0 \
+          node-1 \
+          server \
+          redis-service
+        
+        echo "k8s resources removed"

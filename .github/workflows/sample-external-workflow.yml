@@ -1,0 +1,156 @@
+name: Sample external controller workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  redis-service:
+    runs-on: ubuntu-22.04
+
+    services:
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: redis-server
+
+      - name: Check Tailscale
+        run: tailscale status
+
+      - name: TS SSH Up
+        run: sudo tailscale set --ssh
+        
+      - name: Test internal server
+        run: |
+          tailscale ping redis-server
+
+      - name: Test Redis server
+        run: |
+          docker ps
+          docker exec ${{ job.services.redis.id }} redis-cli ping
+
+      - name: Test SET/GET
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli SET main_service redis
+          docker exec ${{ job.services.redis.id }} redis-cli GET main_service
+      
+      - name: Check loop
+        shell: bash
+        run: |
+          KEY="main_service"
+          MAX_RETRIES=60
+          COUNT=0
+
+          while true; do
+              VALUE=$(docker exec ${{ job.services.redis.id }} redis-cli GET "$KEY")
+
+              # Break when key is nil/missing
+              if [ -z "$VALUE" ]; then
+                  echo "$KEY is nil. Breaking loop."
+                  break
+              fi
+
+              COUNT=$((COUNT + 1))
+
+              if [ "$COUNT" -ge "$MAX_RETRIES" ]; then
+                  echo "Timeout: $KEY still exists with value: $VALUE"
+                  exit 1
+              fi
+
+              echo "$KEY still exists: $VALUE"
+              echo "Waiting... ($COUNT/$MAX_RETRIES)"
+              sleep 2
+          done
+
+          echo "Continuing workflow..."
+  
+  check-redis-service:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: client-vm
+
+      - name: Install Redis CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools
+
+      - name: Wait for Redis
+        run: |
+          REDIS_HOST="redis-server"
+          REDIS_PORT="6379"
+          MAX_RETRIES=60
+          COUNT=0
+
+          while true; do
+            echo "Checking Redis at ${REDIS_HOST}:${REDIS_PORT}..."
+
+            RESPONSE=$(redis-cli \
+              -h "$REDIS_HOST" \
+              -p "$REDIS_PORT" \
+              ping 2>/dev/null || true)
+
+            if [ "$RESPONSE" = "PONG" ]; then
+              echo "Redis is available."
+              break
+            fi
+
+            COUNT=$((COUNT + 1))
+
+            if [ "$COUNT" -ge "$MAX_RETRIES" ]; then
+              echo "Timeout waiting for Redis."
+              exit 1
+            fi
+
+            echo "Redis not available yet. ($COUNT/$MAX_RETRIES)"
+            sleep 2
+          done
+
+  shutdown-redis-service:
+    
+    runs-on: ubuntu-26.04
+    
+    needs: 
+      - check-redis-service
+    
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: client-vm
+
+      - name: Install Redis CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools
+
+      - name: Dismiss redis server job
+        run: |
+          redis-cli -h redis-server -p 6379 DEL main_service
+      
+      - name: Sleep
+        run: sleep 5
